@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\Location;
 use App\Support\GooglePlaces;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Monthly liveness check.
@@ -58,7 +59,7 @@ class RefreshPlaceIdsCommand extends Command
         foreach ($venues as $venue) {
             $result = $places->refresh($venue->place_id);
 
-            if ($result['status'] === GooglePlaces::DEFERRED) {
+            if (GooglePlaces::isDeferred($result)) {
                 // Not checked at all. Leave `place_id_checked_at` alone so the
                 // next run retries instead of treating this venue as done.
                 $deferred++;
@@ -102,6 +103,20 @@ class RefreshPlaceIdsCommand extends Command
             );
 
             $this->line('Status was left untouched. Suspend or correct these by hand.');
+
+            // The only context this command runs in is the scheduler, whose
+            // stdout goes nowhere. Without this the escalation above — the
+            // entire point of the monthly check — is written and discarded.
+            Log::warning('Venues whose Google place no longer resolves', [
+                'count' => count($flagged),
+                'venues' => collect($flagged)->map(fn (Location $l) => [
+                    'id' => $l->id,
+                    'name' => $l->name,
+                    'city' => $l->city,
+                    'status' => $l->place_id_status,
+                    'path' => $l->path,
+                ])->all(),
+            ]);
         }
 
         return self::SUCCESS;

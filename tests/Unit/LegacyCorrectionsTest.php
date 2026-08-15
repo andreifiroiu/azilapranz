@@ -20,14 +20,20 @@ class LegacyCorrectionsTest extends TestCase
         return require __DIR__.'/../../database/legacy-corrections.php';
     }
 
-    public function test_no_correction_still_contains_a_destroyed_diacritic(): void
+    /**
+     * ImportLegacyCommand::isCorrupted() treats any "?" as damage still needing
+     * repair, so a correction that contained one would be re-applied on every
+     * run and reported as a repair that never completes.
+     */
+    public function test_no_correction_contains_a_question_mark(): void
     {
         foreach ($this->corrections() as $id => $columns) {
             foreach ($columns as $column => $value) {
-                $this->assertDoesNotMatchRegularExpression(
-                    '/\p{L}\?\p{L}/u',
+                $this->assertStringNotContainsString(
+                    '?',
                     $value,
-                    "locations.{$column} #{$id} still contains a corrupted character"
+                    "locations.{$column} #{$id} still contains a '?' — either uncorrected damage, ".
+                    'or prose that the corruption guard cannot tell apart from it'
                 );
             }
         }

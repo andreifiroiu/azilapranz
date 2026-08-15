@@ -3,8 +3,10 @@
 namespace App\Support;
 
 use App\Models\Location;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 /**
  * The only Google Places client in the app, and deliberately a narrow one.
@@ -40,8 +42,17 @@ class GooglePlaces
      * The call failed for a reason that says nothing about the venue — a rate
      * limit, a timeout, an outage. Callers must leave the record alone,
      * including `place_id_checked_at`, so the next run picks it up again.
+     *
+     * A DEFERRED result always carries `place_id => null`; use
+     * `self::isDeferred()` and skip the write rather than reading the ID.
      */
     public const DEFERRED = 'deferred';
+
+    /** @param  array{status: string, place_id: ?string}  $result */
+    public static function isDeferred(array $result): bool
+    {
+        return $result['status'] === self::DEFERRED;
+    }
 
     public function __construct(private readonly ?string $key = null) {}
 
@@ -100,12 +111,30 @@ class GooglePlaces
             ];
         }
 
-        $response = $this->request('places.id')
-            ->post(self::BASE.'/places:searchText', $body);
+        try {
+            $response = $this->request('places.id')
+                ->post(self::BASE.'/places:searchText', $body);
+        } catch (ConnectionException $e) {
+            // retry(throw: false) suppresses error *responses* only; a timeout,
+            // DNS failure or reset still throws. Left uncaught it would abort a
+            // 500-venue run partway through, which is exactly the class of
+            // failure DEFERRED exists to absorb.
+            Log::warning('Places search failed to connect', [
+                'location_id' => $location->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return ['status' => self::DEFERRED, 'place_id' => null];
+        }
 
         if (! $response->successful()) {
             // Only a clean empty result means "no such place". Anything else is
             // our problem, not the restaurant's.
+            Log::warning('Places search returned an error', [
+                'location_id' => $location->id,
+                'status' => $response->status(),
+            ]);
+
             return ['status' => self::DEFERRED, 'place_id' => null];
         }
 
@@ -129,8 +158,17 @@ class GooglePlaces
      */
     public function refresh(string $placeId): array
     {
-        $response = $this->request('id')
-            ->get(self::BASE.'/places/'.$placeId);
+        try {
+            $response = $this->request('id')
+                ->get(self::BASE.'/places/'.$placeId);
+        } catch (ConnectionException $e) {
+            Log::warning('Places refresh failed to connect', [
+                'place_id' => $placeId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return ['status' => self::DEFERRED, 'place_id' => null];
+        }
 
         if ($response->successful()) {
             return ['status' => self::OK, 'place_id' => $response->json('id') ?: $placeId];
@@ -141,7 +179,9 @@ class GooglePlaces
             400 => ['status' => self::INVALID, 'place_id' => null],
             // 429 and 5xx say nothing about the venue, so the record is left
             // untouched and re-checked next run rather than counted as done.
-            default => ['status' => self::DEFERRED, 'place_id' => $placeId],
+            // place_id is null like every other DEFERRED result: a caller that
+            // forgot to skip the write must not be handed an ID to persist.
+            default => ['status' => self::DEFERRED, 'place_id' => null],
         };
     }
 

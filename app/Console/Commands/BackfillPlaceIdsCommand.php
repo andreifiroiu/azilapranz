@@ -11,7 +11,8 @@ class BackfillPlaceIdsCommand extends Command
     protected $signature = 'azp:places:backfill
                             {--city= : Restrict to one city slug}
                             {--limit=0 : Stop after this many venues}
-                            {--force : Re-resolve venues that already have a place ID}
+                            {--force : Re-resolve every venue, including ones already matched}
+                            {--retry-unmatched : Also retry venues a previous search found nothing for}
                             {--dry-run : Resolve and report without writing}';
 
     protected $description = 'Resolve each venue to a Google place ID (the ID only — no venue data is stored)';
@@ -32,6 +33,15 @@ class BackfillPlaceIdsCommand extends Command
 
         if (! $this->option('force')) {
             $query->whereNull('place_id');
+
+            // Text Search is billed per call. A venue a previous run already
+            // searched and found nothing for would otherwise be re-queried on
+            // every run forever, because UNMATCHED also stores a null place_id.
+            if (! $this->option('retry-unmatched')) {
+                $query->where(fn ($q) => $q
+                    ->whereNull('place_id_status')
+                    ->orWhereNotIn('place_id_status', [GooglePlaces::UNMATCHED]));
+            }
         }
 
         if ($limit = (int) $this->option('limit')) {
@@ -56,7 +66,7 @@ class BackfillPlaceIdsCommand extends Command
             $result = $places->search($venue);
             $counts[$result['status']]++;
 
-            if (! $dryRun && $result['status'] !== GooglePlaces::DEFERRED) {
+            if (! $dryRun && ! GooglePlaces::isDeferred($result)) {
                 // Only the ID and our own bookkeeping — see GooglePlaces for
                 // why nothing else from the response may be persisted.
                 $venue->forceFill([
@@ -81,6 +91,20 @@ class BackfillPlaceIdsCommand extends Command
 
         if ($dryRun) {
             $this->warn('Dry run — nothing was written.');
+        }
+
+        // A run of real Romanian restaurants that matches nothing at all is a
+        // broken integration, not a fact about the venues — a changed response
+        // shape, an ignored field mask, a 200 carrying an error envelope. Left
+        // unguarded it would write "unmatched" over hundreds of rows and exit 0.
+        $attempted = $venues->count() - $counts[GooglePlaces::DEFERRED];
+
+        if ($attempted >= 20 && $counts[GooglePlaces::OK] === 0) {
+            $this->newLine();
+            $this->error(sprintf('All %d venues came back unmatched — treating that as a bug, not a result.', $attempted));
+            $this->line('Check the API key, the field mask and the Text Search response shape.');
+
+            return self::FAILURE;
         }
 
         return self::SUCCESS;

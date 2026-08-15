@@ -5,6 +5,7 @@ namespace App\Support;
 use DOMDocument;
 use DOMElement;
 use DOMNode;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Sanitiser for HTML that came out of the legacy CKEditor admin.
@@ -74,6 +75,15 @@ class LegacyHtml
         $root = $dom->getElementById('azp-root');
 
         if (! $root) {
+            // Degrading every tag away is a real loss of formatting, and it
+            // would happen site-wide if a libxml upgrade changed getElementById
+            // behaviour here. Silent degradation at HTTP 200 is undetectable,
+            // so say something.
+            Log::warning('LegacyHtml could not locate its wrapper; falling back to stripped text', [
+                'length' => strlen($html),
+                'excerpt' => mb_substr($html, 0, 120),
+            ]);
+
             return nl2br(e(strip_tags($html)), false);
         }
 
