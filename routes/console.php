@@ -23,8 +23,11 @@ if (! $placesConfigured) {
     Log::debug('Google Places jobs are not scheduled: azp.google.places_key is empty.');
 }
 
-// An ID-only Place Details request is free, so this costs nothing but tells us
-// which venues have quietly closed. Batched to keep one run well inside quota.
+// Asks for `id,businessStatus`. The businessStatus field is Place Details
+// **Pro** — 5,000 free calls a month, then $17 per 1,000 — so this is no longer
+// the free ID-only SKU it started as. Steady state is ~552 checks a month on a
+// 30-day cycle, comfortably inside the free tier; the --limit is what keeps a
+// backlog from spending the month's allowance in a night.
 if ($placesConfigured) {
     Schedule::command('azp:places:refresh --older-than=30 --limit=500')
         ->dailyAt('04:15')

@@ -5,19 +5,26 @@ namespace App\Support;
 use App\Models\Location;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\RequestException;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /**
  * The only Google Places client in the app, and deliberately a narrow one.
  *
- * Every request here sends a field mask of `id` alone. That is not an
- * optimisation — it is the compliance boundary. Maps Platform General Service
- * Terms §3 permits storing `place_id` indefinitely, while EEA ToS §3.3.2(a)
- * forbids saving business names, addresses or reviews and §3.3.2(b) forbids
- * caching anything else. Widening a field mask here would put venue data in
- * reach of the callers, so the masks are constants and the responses are
- * reduced to an ID and a status before they leave this class.
+ * The field masks here are constants, and responses are reduced to an ID and a
+ * status before they leave this class. Maps Platform General Service Terms §3
+ * permits storing `place_id` indefinitely; EEA ToS §3.3.2(a) forbids saving
+ * business names, addresses or reviews, and §3.3.2(b) forbids caching anything
+ * else. So a widened mask is not a free optimisation — whatever it returns
+ * becomes reachable by callers that persist what they are handed.
+ *
+ * One deliberate exception: `refresh()` requests `businessStatus` and maps it
+ * onto CLOSED_PERMANENTLY / CLOSED_TEMPORARILY, which the caller stores. That
+ * is a cache of Google Maps Content and is not covered by §3 — it was asked
+ * for knowingly, to catch closures that a still-resolving place ID hides.
+ * Nothing else from the response is exposed.
  *
  * Fresh Google content belongs on the page via Places UI Kit
  * (`<x-place-details>`), which renders client-side and stores nothing.
@@ -26,8 +33,21 @@ class GooglePlaces
 {
     private const BASE = 'https://places.googleapis.com/v1';
 
-    /** Venue matched to a place ID. */
+    /**
+     * Google has the place, and reports the business as trading.
+     *
+     * Only refresh() may set this, because only refresh() asks for
+     * `businessStatus`. It is the condition azp:places:sync-status reopens a
+     * venue on, so a search — which happily returns closed restaurants and
+     * cannot see their trading status — must never claim it.
+     */
     public const OK = 'ok';
+
+    /**
+     * A search matched this venue to a place ID; whether the business trades
+     * is not yet known. The next refresh() replaces this with the truth.
+     */
+    public const RESOLVED = 'resolved';
 
     /** Place ID no longer resolves — venue closed, moved or merged away. */
     public const NOT_FOUND = 'not_found';
@@ -37,6 +57,27 @@ class GooglePlaces
 
     /** Search returned nothing for this venue. */
     public const UNMATCHED = 'unmatched';
+
+    /** Google reports the business as permanently closed. */
+    public const CLOSED_PERMANENTLY = 'closed_permanently';
+
+    /** Google reports the business as temporarily closed. */
+    public const CLOSED_TEMPORARILY = 'closed_temporarily';
+
+    /**
+     * Statuses that put a venue on the review list.
+     *
+     * Ordered by how strongly each implies the venue should come down, which
+     * is the order the alert email groups them in.
+     *
+     * @var list<string>
+     */
+    public const NEEDS_REVIEW = [
+        self::CLOSED_PERMANENTLY,
+        self::NOT_FOUND,
+        self::CLOSED_TEMPORARILY,
+        self::INVALID,
+    ];
 
     /**
      * The call failed for a reason that says nothing about the venue — a rate
@@ -142,25 +183,40 @@ class GooglePlaces
         $id = $response->json('places.0.id');
 
         return filled($id)
-            ? ['status' => self::OK, 'place_id' => $id]
+            ? ['status' => self::RESOLVED, 'place_id' => $id]
             : ['status' => self::UNMATCHED, 'place_id' => null];
     }
 
     /**
      * Re-check a stored place ID.
      *
-     * Google documents an ID-only Place Details request as free, and as the
-     * supported way to refresh IDs older than 12 months. A place that has
-     * merged into another returns the replacement ID, so the caller should
-     * persist whatever comes back rather than assume it is unchanged.
+     * Two signals, because they catch different failures. A place ID that
+     * stops resolving means the place was removed from Google's database;
+     * `businessStatus` catches the commoner case where the place still
+     * resolves perfectly well and the restaurant behind it has shut.
+     *
+     * A place that has merged into another returns the replacement ID, so the
+     * caller should persist whatever comes back rather than assume it is
+     * unchanged.
+     *
+     * Billing note: `businessStatus` is a Place Details **Pro** field. Asking
+     * for it moves this call off the free unlimited "IDs Only" SKU and onto
+     * Pro — 5,000 free calls a month, then $17 per 1,000.
      *
      * @return array{status: string, place_id: ?string}
      */
     public function refresh(string $placeId): array
     {
+        if (self::malformed($placeId)) {
+            return ['status' => self::INVALID, 'place_id' => null];
+        }
+
         try {
-            $response = $this->request('id')
-                ->get(self::BASE.'/places/'.$placeId);
+            // Encoded: a stored ID carrying a space or slash would otherwise
+            // build a malformed URI and throw InvalidArgumentException, which
+            // is not a ConnectionException and would abort the whole run.
+            $response = $this->request('id,businessStatus')
+                ->get(self::BASE.'/places/'.rawurlencode($placeId));
         } catch (ConnectionException $e) {
             Log::warning('Places refresh failed to connect', [
                 'place_id' => $placeId,
@@ -171,12 +227,42 @@ class GooglePlaces
         }
 
         if ($response->successful()) {
-            return ['status' => self::OK, 'place_id' => $response->json('id') ?: $placeId];
+            // A 200 whose body did not parse tells us nothing. Without this a
+            // proxy interstitial or a reshaped response would read as
+            // "trading" for every venue and reopen every closure at once.
+            if (! is_array($response->json())) {
+                Log::warning('Places refresh returned an unparseable body', [
+                    'place_id' => $placeId,
+                    'body' => str($response->body())->limit(200)->value(),
+                ]);
+
+                return ['status' => self::DEFERRED, 'place_id' => null];
+            }
+
+            // The place still resolves, so the ID stays either way — a closed
+            // restaurant is not a missing place, and re-searching for it next
+            // run would just burn a billed call to find the same thing.
+            $id = $response->json('id') ?: $placeId;
+
+            return [
+                'status' => match ($response->json('businessStatus')) {
+                    'CLOSED_PERMANENTLY' => self::CLOSED_PERMANENTLY,
+                    'CLOSED_TEMPORARILY' => self::CLOSED_TEMPORARILY,
+                    'OPERATIONAL' => self::OK,
+                    // Absent or unrecognised. Google omits the field for places
+                    // it holds no trading status for, so this is not a closure
+                    // — but it is not a confirmation either, and OK is what
+                    // sync-status reopens a venue on. Identity known, trading
+                    // unknown is exactly what RESOLVED means.
+                    default => self::RESOLVED,
+                },
+                'place_id' => $id,
+            ];
         }
 
         return match ($response->status()) {
             404 => ['status' => self::NOT_FOUND, 'place_id' => null],
-            400 => ['status' => self::INVALID, 'place_id' => null],
+            400 => $this->classifyBadRequest($response, $placeId),
             // 429 and 5xx say nothing about the venue, so the record is left
             // untouched and re-checked next run rather than counted as done.
             // place_id is null like every other DEFERRED result: a caller that
@@ -185,11 +271,54 @@ class GooglePlaces
         };
     }
 
+    /**
+     * A 400 is never treated as a fact about the venue.
+     *
+     * Places returns INVALID_ARGUMENT both for a malformed place ID and for a
+     * malformed field mask, and the second is identical for every venue in the
+     * run — classifying it per-venue would mark the whole directory INVALID and
+     * wipe every stored place ID in one night. Reading the error text cannot
+     * separate them either: a field-mask rejection names
+     * `google.maps.places.v1.Place`, so any match on "place" catches it.
+     *
+     * A genuinely malformed ID is caught before the call instead, by
+     * self::malformed(), where the answer is certain and costs nothing.
+     *
+     * @return array{status: string, place_id: ?string}
+     */
+    private function classifyBadRequest(Response $response, string $placeId): array
+    {
+        Log::warning('Places refresh returned 400 — treating it as our request, not the venue', [
+            'place_id' => $placeId,
+            'error' => (string) $response->json('error.message'),
+        ]);
+
+        return ['status' => self::DEFERRED, 'place_id' => null];
+    }
+
+    /**
+     * Whether a stored ID cannot possibly be a place ID.
+     *
+     * Google place IDs are URL-safe base64-ish tokens. Anything outside that
+     * alphabet came from a bad write or a legacy import, and there is no point
+     * spending a billed call to be told so.
+     */
+    private static function malformed(string $placeId): bool
+    {
+        return $placeId === '' || preg_match('/^[A-Za-z0-9_-]+$/', $placeId) !== 1;
+    }
+
     private function request(string $fieldMask): PendingRequest
     {
         return Http::asJson()
             ->timeout(15)
-            ->retry(2, 500, throw: false)
+            // Retry only what retrying can fix. A 4xx is deterministic — the
+            // same request gets the same answer — so retrying one tripled the
+            // billed Place Details Pro calls a permanently rejected ID cost
+            // every night, for nothing.
+            ->retry(2, 500, throw: false, when: fn (\Throwable $e) => ! $e instanceof RequestException
+                || $e->response->serverError()
+                || $e->response->status() === 429)
             ->withHeaders([
                 'X-Goog-Api-Key' => (string) $this->key,
                 'X-Goog-FieldMask' => $fieldMask,

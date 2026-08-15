@@ -104,6 +104,14 @@ return [
     |
     */
 
+    /*
+    | Where operational alerts go — currently the venue review report from
+    | azp:places:refresh. Empty disables sending; the findings still land in
+    | the log and in `place_id_status` either way.
+    */
+
+    'alert_email' => env('AZP_ALERT_EMAIL'),
+
     'google' => [
         'places_key' => env('GOOGLE_PLACES_API_KEY'),
         'maps_browser_key' => env('GOOGLE_MAPS_BROWSER_KEY'),
