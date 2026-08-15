@@ -19,7 +19,15 @@ class ImageCompatController extends Controller
      */
     public function thumbPhp(Request $request): Response
     {
-        return $this->redirectToAsset((string) $request->query('image', ''));
+        $image = $request->query('image', '');
+
+        // ?image[]=x hands us an array, and casting that to string raises an
+        // ErrorException — a 500 where a 404 was intended.
+        if (! is_string($image)) {
+            abort(404);
+        }
+
+        return $this->redirectToAsset($image);
     }
 
     public function thumbs(string $path): Response

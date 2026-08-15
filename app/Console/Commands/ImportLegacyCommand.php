@@ -210,10 +210,19 @@ class ImportLegacyCommand extends Command
         ));
     }
 
-    /** A "?" between two letters is a destroyed diacritic, not punctuation. */
+    /**
+     * Whether a value still shows the Latin-1 damage a correction repairs.
+     *
+     * Any "?" counts, not just one between two letters: the destroyed
+     * characters are ă/ș/ț, and word-initial "Ș" is common in Romanian
+     * ("Str. ?tefan cel Mare"), so requiring a letter on both sides reported
+     * corrupted rows as clean and silently discarded their correction. None of
+     * the fields in the corrections map legitimately contains a question mark,
+     * which is asserted by LegacyCorrectionsTest.
+     */
     private function isCorrupted(string $value): bool
     {
-        return (bool) preg_match('/\p{L}\?\p{L}/u', $value);
+        return str_contains($value, '?');
     }
 
     private function importAreaGroups($legacy): void
