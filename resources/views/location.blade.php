@@ -44,7 +44,9 @@
         ] : null,
         // Suppressed when Google's widget supplies the rating instead — see
         // Location::showsGooglePlace(). Structured ratings must be visible.
-        'aggregateRating' => ($location->average_rating && ! $location->showsGooglePlace()) ? [
+        // Also dropped for a closed venue: star snippets are an invitation to
+        // visit, and this page exists to say the opposite.
+        'aggregateRating' => ($location->average_rating && ! $location->showsGooglePlace() && ! $location->isClosed()) ? [
             '@type' => 'AggregateRating',
             'ratingValue' => $location->average_rating,
             'reviewCount' => $location->rating_votes,
@@ -78,6 +80,16 @@
     <div class="mx-auto max-w-6xl px-4 sm:px-6">
 
         <x-breadcrumbs :items="$breadcrumbs" />
+
+        @if ($notice = $location->closureNotice())
+            {{-- Above the fold and before the venue's own details, so nobody
+                 reads the phone number without seeing this first. --}}
+            <div role="status"
+                 class="mb-8 rounded border border-brick/30 bg-brick/5 px-4 py-3">
+                <p class="font-display font-bold text-brick">{{ $notice[0] }}</p>
+                <p class="mt-1 text-sm text-muted">{{ $notice[1] }}</p>
+            </div>
+        @endif
 
         <article class="border-b border-rule pb-10">
             <div class="flex flex-col gap-6 sm:flex-row sm:items-start">
@@ -195,7 +207,10 @@
             </div>
 
             <aside>
-                <x-place-details :place-id="$location->place_id" />
+                {{-- Gated on showsGooglePlace(), which excludes closed venues. --}}
+                @if ($location->showsGooglePlace())
+                    <x-place-details :place-id="$location->place_id" />
+                @endif
 
                 @if ($location->hasCoordinates())
                     <h2 class="font-display text-sm font-medium uppercase tracking-widest text-muted">

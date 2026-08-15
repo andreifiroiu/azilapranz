@@ -110,12 +110,30 @@ class ImportLegacyCommand extends Command
             ];
         }
 
-        // Resolved Google place IDs are not in the legacy data and each one cost
-        // a billed Text Search call, so carry them across the replace rather
-        // than making a re-import silently require a full re-backfill.
+        // None of the Google state is in the legacy data, and each place ID cost
+        // a billed Text Search call, so carry it across the replace rather than
+        // making a re-import silently require a full re-backfill.
+        //
+        // Every column, not just the ID: dropping the bookkeeping left a venue
+        // whose `place_id_status` said `closed_permanently` but whose
+        // `place_id_status_changed_at` was NULL — which sync-status can never
+        // close and refresh can never re-flag, because Google keeps returning
+        // the same status and "changed" would be false forever. And selected on
+        // any of them being set, not on `place_id`, because the venues in the
+        // worst state are exactly the ones whose ID was cleared.
+        $placeColumns = [
+            'place_id', 'previous_place_id', 'place_id_status',
+            'place_id_checked_at', 'place_id_status_changed_at',
+            'place_id_flag_reported_at', 'auto_closed_from', 'auto_closed_at',
+        ];
+
         $places = DB::table('locations')
-            ->whereNotNull('place_id')
-            ->get(['id', 'place_id', 'place_id_status', 'place_id_checked_at'])
+            ->where(function ($q) {
+                $q->whereNotNull('place_id')
+                    ->orWhereNotNull('place_id_status')
+                    ->orWhereNotNull('auto_closed_from');
+            })
+            ->get(array_merge(['id', 'status'], $placeColumns))
             ->keyBy('id');
 
         DB::table('locations')->delete();
@@ -124,11 +142,21 @@ class ImportLegacyCommand extends Command
         }
 
         foreach ($places as $id => $place) {
-            DB::table('locations')->where('id', $id)->update([
-                'place_id' => $place->place_id,
-                'place_id_status' => $place->place_id_status,
-                'place_id_checked_at' => $place->place_id_checked_at,
-            ]);
+            $restore = [];
+
+            foreach ($placeColumns as $column) {
+                $restore[$column] = $place->$column;
+            }
+
+            // A closure we applied is our decision, not the legacy database's.
+            // Letting the import reset `status` would put a shut restaurant
+            // back into every listing while `place_id_status` still said it
+            // was closed — visibly wrong, and unreachable by any command.
+            if ($place->auto_closed_from !== null) {
+                $restore['status'] = $place->status;
+            }
+
+            DB::table('locations')->where('id', $id)->update($restore);
         }
 
         if ($places->isNotEmpty()) {

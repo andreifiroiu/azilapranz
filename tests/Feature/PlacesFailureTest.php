@@ -177,7 +177,8 @@ class PlacesFailureTest extends TestCase
 
         $venue = Location::find(560);
         $this->assertSame('ChIJ_ok', $venue->place_id);
-        $this->assertSame(GooglePlaces::OK, $venue->place_id_status);
+        // A search resolves identity only; refresh decides whether it trades.
+        $this->assertSame(GooglePlaces::RESOLVED, $venue->place_id_status);
     }
 
     /**

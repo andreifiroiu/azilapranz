@@ -29,6 +29,14 @@
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
+        <!-- Google Places is opt-in per test. Pinned here because a developer
+             .env with real keys otherwise changes what the suite asserts, and
+             a test that forgot Http::fake() would spend money against the
+             live Places API. -->
+        <env name="GOOGLE_PLACES_API_KEY" value=""/>
+        <env name="GOOGLE_MAPS_BROWSER_KEY" value=""/>
+        <env name="GOOGLE_PLACES_UI_KIT" value="false"/>
+        <env name="AZP_ALERT_EMAIL" value=""/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
