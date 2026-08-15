@@ -2,8 +2,8 @@
 
 namespace App\Providers;
 
+use App\Support\GooglePlaces;
 use Illuminate\Support\Facades\Gate;
-
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -13,7 +13,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(GooglePlaces::class, fn () => GooglePlaces::make());
     }
 
     /**
@@ -29,6 +29,7 @@ class AppServiceProvider extends ServiceProvider
                 return false;
             }
             $allowed = array_filter(array_map('trim', explode(',', (string) env('LOG_VIEWER_ALLOWED_EMAILS', ''))));
+
             return in_array($user->email, $allowed, true);
         });
         //
