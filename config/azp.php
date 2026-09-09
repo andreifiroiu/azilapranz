@@ -67,6 +67,55 @@ return [
     'google_site_verification' => '5EmWE1AbiqabAB0HUN7KqdyJGHRtlH6fQj_-YyfpyUY',
 
     /*
+    | GA4 measurement ID, and the master switch for measurement: empty removes
+    | the tag AND the consent banner, since a banner asking permission for
+    | nothing is worse than no banner at all.
+    |
+    | Consent Mode still sends cookieless pings while consent is denied, so an
+    | unset dev box pollutes the live property. Set AZP_ANALYTICS_ID= (empty)
+    | anywhere that is not production; the default here is what production uses.
+    */
+
+    'analytics_id' => env('AZP_ANALYTICS_ID', 'G-GJFSCWE8HW'),
+
+    /*
+    | Consent bookkeeping, shared by the head snippet that reads a decision and
+    | the banner that writes one. They must agree on all three values or consent
+    | is written under one key and read under another — which fails silently and
+    | looks like "the banner comes back on every page".
+    |
+    | `version` is the escape hatch: bump it and everyone is asked again, which
+    | is what has to happen if the tags ever cover more than analytics.
+    | 182 days is six months, the shortest of the commonly cited EU expectations.
+    */
+
+    'consent' => [
+
+        /*
+        | The gate itself. On, the tag loads with analytics_storage denied and
+        | waits for the banner. Off, there is no banner and gtag.js loads and
+        | measures immediately, as it would with no consent feature at all.
+        |
+        | Defaults ON so the gate is an explicit opt-out rather than something
+        | lost by forgetting an env var. Turning it off means EU visitors are
+        | given _ga cookies with no prior consent, which is what ePrivacy
+        | forbids — reasonable for a staging box or a non-EU deployment, not
+        | for azilapranz.ro serving Romania.
+        |
+        | Cast rather than trusted: this arrives as a string from several
+        | directions — "1" from phpunit.xml, "false" from some deploy tooling —
+        | and a raw string "false" is truthy in PHP. The views read this as a
+        | plain boolean, so the coercion belongs here, once.
+        */
+
+        'enabled' => filter_var(env('AZP_COOKIE_CONSENT', true), FILTER_VALIDATE_BOOLEAN),
+
+        'cookie' => 'azp_consent',
+        'version' => 1,
+        'max_age_days' => 182,
+    ],
+
+    /*
     | Fallbacks appended to <title> / <meta description>, matching layout.tpl.
     */
 
