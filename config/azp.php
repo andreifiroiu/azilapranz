@@ -67,6 +67,35 @@ return [
     'google_site_verification' => '5EmWE1AbiqabAB0HUN7KqdyJGHRtlH6fQj_-YyfpyUY',
 
     /*
+    | GA4 measurement ID, and the master switch for measurement: empty removes
+    | the tag AND the consent banner, since a banner asking permission for
+    | nothing is worse than no banner at all.
+    |
+    | Consent Mode still sends cookieless pings while consent is denied, so an
+    | unset dev box pollutes the live property. Set AZP_ANALYTICS_ID= (empty)
+    | anywhere that is not production; the default here is what production uses.
+    */
+
+    'analytics_id' => env('AZP_ANALYTICS_ID', 'G-GJFSCWE8HW'),
+
+    /*
+    | Consent bookkeeping, shared by the head snippet that reads a decision and
+    | the banner that writes one. They must agree on all three values or consent
+    | is written under one key and read under another — which fails silently and
+    | looks like "the banner comes back on every page".
+    |
+    | `version` is the escape hatch: bump it and everyone is asked again, which
+    | is what has to happen if the tags ever cover more than analytics.
+    | 182 days is six months, the shortest of the commonly cited EU expectations.
+    */
+
+    'consent' => [
+        'cookie' => 'azp_consent',
+        'version' => 1,
+        'max_age_days' => 182,
+    ],
+
+    /*
     | Fallbacks appended to <title> / <meta description>, matching layout.tpl.
     */
 

@@ -57,6 +57,8 @@
     @fonts
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 
+    <x-analytics />
+
     {{ $head ?? '' }}
 </head>
 <body class="min-h-screen flex flex-col">
@@ -137,6 +139,18 @@
                     <li><a class="text-muted hover:text-brick hover:underline" href="{{ url('/despre-noi.html') }}">Despre noi</a></li>
                     <li><a class="text-muted hover:text-brick hover:underline" href="{{ url('/contact.html') }}">Contact</a></li>
                     <li><a class="text-muted hover:text-brick hover:underline" href="{{ url('/politica-de-confidentialitate.html') }}">Confidențialitate</a></li>
+                    {{-- Hidden until the banner's script reveals it: without
+                         JavaScript the bar never appears, so neither should the
+                         control that reopens it. The id is the contract with
+                         components/cookie-banner.blade.php. --}}
+                    @if (config('azp.analytics_id'))
+                        <li hidden>
+                            <button type="button" id="consimtamant-setari"
+                                    class="cursor-pointer text-muted hover:text-brick hover:underline">
+                                Setări cookie-uri
+                            </button>
+                        </li>
+                    @endif
                 </ul>
             </nav>
         </div>
@@ -146,6 +160,8 @@
         </p>
     </div>
 </footer>
+
+<x-cookie-banner />
 
 @stack('scripts')
 

@@ -37,6 +37,11 @@
         <env name="GOOGLE_MAPS_BROWSER_KEY" value=""/>
         <env name="GOOGLE_PLACES_UI_KIT" value="false"/>
         <env name="AZP_ALERT_EMAIL" value=""/>
+        <!-- GA4 and the consent banner both hang off this. Pinned empty so the
+             suite asserts an untagged page by default and each test opts in
+             with config()->set(), and so a developer .env carrying the real
+             measurement ID cannot send test traffic to the live property. -->
+        <env name="AZP_ANALYTICS_ID" value=""/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
