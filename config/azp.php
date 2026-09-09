@@ -108,7 +108,7 @@ return [
         | plain boolean, so the coercion belongs here, once.
         */
 
-        'enabled' => filter_var(env('AZP_COOKIE_CONSENT', true), FILTER_VALIDATE_BOOLEAN),
+        'enabled' => filter_var(env('AZP_COOKIE_CONSENT', false), FILTER_VALIDATE_BOOLEAN),
 
         'cookie' => 'azp_consent',
         'version' => 1,
