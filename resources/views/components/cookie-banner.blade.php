@@ -2,10 +2,11 @@
     $consent = config('azp.consent');
 @endphp
 
-@if (config('azp.analytics_id'))
+@if (config('azp.analytics_id') && config('azp.consent.enabled'))
     {{--
-        Cookie consent bar. Rendered only when there is a tag to consent to,
-        which is why it is absent locally and in the suite unless a test opts in.
+        Cookie consent bar. Rendered only when there is a tag to consent to and
+        the gate is on, which is why it is absent locally and in the suite
+        unless a test opts in.
 
         It ships with the `hidden` attribute and is revealed by the script
         directly below, and only when no decision is stored. The other way round

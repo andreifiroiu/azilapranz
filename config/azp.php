@@ -90,6 +90,26 @@ return [
     */
 
     'consent' => [
+
+        /*
+        | The gate itself. On, the tag loads with analytics_storage denied and
+        | waits for the banner. Off, there is no banner and gtag.js loads and
+        | measures immediately, as it would with no consent feature at all.
+        |
+        | Defaults ON so the gate is an explicit opt-out rather than something
+        | lost by forgetting an env var. Turning it off means EU visitors are
+        | given _ga cookies with no prior consent, which is what ePrivacy
+        | forbids — reasonable for a staging box or a non-EU deployment, not
+        | for azilapranz.ro serving Romania.
+        |
+        | Cast rather than trusted: this arrives as a string from several
+        | directions — "1" from phpunit.xml, "false" from some deploy tooling —
+        | and a raw string "false" is truthy in PHP. The views read this as a
+        | plain boolean, so the coercion belongs here, once.
+        */
+
+        'enabled' => filter_var(env('AZP_COOKIE_CONSENT', true), FILTER_VALIDATE_BOOLEAN),
+
         'cookie' => 'azp_consent',
         'version' => 1,
         'max_age_days' => 182,

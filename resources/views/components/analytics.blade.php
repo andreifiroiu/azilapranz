@@ -1,9 +1,32 @@
 @php
     $analyticsId = config('azp.analytics_id');
     $consent = config('azp.consent');
+    $consentRequired = (bool) ($consent['enabled'] ?? true);
 @endphp
 
 @if ($analyticsId)
+    @if (! $consentRequired)
+        {{--
+            Consent gate switched off (azp.consent.enabled): gtag.js loads and
+            measures immediately, exactly as Google's own snippet does. No
+            consent commands are queued at all — emitting `default` granted
+            would be a claim we had asked and been told yes.
+
+            This sets _ga on every visitor with no prior consent. For an EU
+            audience that is what ePrivacy forbids, so it belongs to a staging
+            box or a non-EU deployment, not to azilapranz.ro. The banner, the
+            footer withdrawal control and the cookie section of the privacy
+            policy all disappear with it — there is no half-on state where the
+            site claims to ask and does not.
+        --}}
+        <script>
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+
+            gtag('js', new Date());
+            gtag('config', @json($analyticsId));
+        </script>
+    @else
     {{--
         Google tag (gtag.js) under Consent Mode v2.
 
@@ -99,5 +122,10 @@
         gtag('js', new Date());
         gtag('config', @json($analyticsId));
     </script>
+    @endif
+
+    {{-- Outside the branch: whichever block ran above, the async loader has to
+         come after it. Above an inline script it can execute first and process
+         `config` with no state queued. --}}
     <script async src="https://www.googletagmanager.com/gtag/js?id={{ $analyticsId }}"></script>
 @endif

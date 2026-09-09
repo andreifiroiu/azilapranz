@@ -46,6 +46,13 @@ class CookieConsentTest extends TestCase
         config()->set('azp.analytics_id', 'G-TEST123');
     }
 
+    /** The gate switched off: the tag loads and measures with nobody asked. */
+    private function withoutTheGate(): void
+    {
+        $this->withAnalytics();
+        config()->set('azp.consent.enabled', false);
+    }
+
     /** Substring assertion against HTML we already hold. */
     private function assertHtmlContains(string $html, string $needle): void
     {
@@ -238,6 +245,67 @@ class CookieConsentTest extends TestCase
         $this->get('/timisoara/restaurante.html')
             ->assertOk()
             ->assertSee('<section id="consimtamant-cookie" hidden tabindex="-1"', false);
+    }
+
+    public function test_the_gate_can_be_switched_off_and_the_tag_then_loads_unguarded(): void
+    {
+        $this->withoutTheGate();
+
+        $html = $this->get('/')->assertOk()->getContent();
+
+        // The tag still loads, and the loader still comes after the inline
+        // block that configures it.
+        $config = $this->positionOf($html, 'gtag(\'config\', "G-TEST123");');
+        $loader = $this->positionOf(
+            $html,
+            '<script async src="https://www.googletagmanager.com/gtag/js?id=G-TEST123"></script>'
+        );
+
+        $this->assertLessThan($loader, $config,
+            'The async loader must still sit below the inline block that configures it.');
+
+        // No consent commands at all. Queueing `default` granted would claim we
+        // had asked and been told yes.
+        $this->assertStringNotContainsString("gtag('consent'", $html);
+    }
+
+    public function test_switching_the_gate_off_removes_the_banner_and_every_trace_of_it(): void
+    {
+        $this->withoutTheGate();
+
+        // Banner, footer withdrawal control and the policy's consent copy go
+        // together. A half-on state where the site claims to ask and does not
+        // would be worse than either end of the switch.
+        $this->get('/')
+            ->assertOk()
+            ->assertDontSee('consimtamant-cookie', false)
+            ->assertDontSee('consimtamant-setari', false)
+            ->assertDontSee('Setări cookie-uri');
+    }
+
+    public function test_the_privacy_copy_stops_promising_a_banner_when_the_gate_is_off(): void
+    {
+        $this->withoutTheGate();
+
+        $this->get('/politica-de-confidentialitate.html')
+            ->assertOk()
+            // Still discloses the cookies — transparency does not depend on the
+            // gate — but must not describe a control that is not on the page.
+            ->assertSee('<h2>Cookie-uri</h2>', false)
+            ->assertSee('Google Analytics 4')
+            ->assertSee('<h3>Cum le poți refuza</h3>', false)
+            ->assertDontSee('Cum îți retragi acordul')
+            ->assertDontSee('Setări cookie-uri')
+            // azp_consent only exists while the gate is on, so it must not be
+            // listed as a cookie the site sets.
+            ->assertDontSee('<strong>'.config('azp.consent.cookie').'</strong>', false);
+    }
+
+    public function test_the_gate_is_on_by_default(): void
+    {
+        // An explicit opt-out, not something lost by forgetting an env var:
+        // off means EU visitors get _ga with no prior consent.
+        $this->assertTrue(config('azp.consent.enabled'));
     }
 
     public function test_no_tag_and_no_banner_without_a_measurement_id(): void

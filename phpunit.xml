@@ -42,6 +42,10 @@
              with config()->set(), and so a developer .env carrying the real
              measurement ID cannot send test traffic to the live property. -->
         <env name="AZP_ANALYTICS_ID" value=""/>
+        <!-- The consent gate defaults on; pinned here so a developer .env that
+             switched it off cannot quietly turn the suite into one that asserts
+             an ungated tag. Tests for the off state set it with config()->set(). -->
+        <env name="AZP_COOKIE_CONSENT" value="true"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>

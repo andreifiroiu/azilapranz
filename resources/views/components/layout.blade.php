@@ -143,7 +143,7 @@
                          JavaScript the bar never appears, so neither should the
                          control that reopens it. The id is the contract with
                          components/cookie-banner.blade.php. --}}
-                    @if (config('azp.analytics_id'))
+                    @if (config('azp.analytics_id') && config('azp.consent.enabled'))
                         <li hidden>
                             <button type="button" id="consimtamant-setari"
                                     class="cursor-pointer text-muted hover:text-brick hover:underline">

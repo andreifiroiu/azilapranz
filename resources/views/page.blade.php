@@ -41,6 +41,7 @@
                         // nothing to flag it.
                         $consentCookie = config('azp.consent.cookie');
                         $consentMonths = (int) round(config('azp.consent.max_age_days') / 30.42);
+                        $consentRequired = (bool) config('azp.consent.enabled');
                     @endphp
 
                     <h2>Cookie-uri</h2>
@@ -58,7 +59,9 @@
                     </p>
 
                     <ul>
-                        <li><strong>{{ $consentCookie }}</strong> — reține răspunsul tău la banner-ul de cookie-uri, ca să nu te întrebăm la fiecare pagină. Durează {{ $consentMonths }} luni.</li>
+                        @if ($consentRequired)
+                            <li><strong>{{ $consentCookie }}</strong> — reține răspunsul tău la banner-ul de cookie-uri, ca să nu te întrebăm la fiecare pagină. Durează {{ $consentMonths }} luni.</li>
+                        @endif
                         <li><strong>Cookie-ul de sesiune</strong> — ține minte contextul vizitei tale pe durata acesteia.</li>
                     </ul>
 
@@ -67,8 +70,13 @@
                     <p>
                         Folosim Google Analytics 4 ca să vedem câți vizitatori avem și ce pagini
                         citesc. Ne interesează cifrele pe ansamblu, nu persoanele.
-                        <strong>Aceste cookie-uri se pun doar dacă apeși „Accept” în banner.</strong>
-                        Dacă refuzi sau ignori banner-ul, nu se pune niciunul.
+                        @if ($consentRequired)
+                            <strong>Aceste cookie-uri se pun doar dacă apeși „Accept” în banner.</strong>
+                            Dacă refuzi sau ignori banner-ul, nu se pune niciunul.
+                        @else
+                            <strong>Aceste cookie-uri se pun la prima ta vizită.</strong>
+                            Mai jos îți arătăm cum le poți bloca sau șterge.
+                        @endif
                     </p>
 
                     <ul>
@@ -83,21 +91,32 @@
                         <a href="https://policies.google.com/privacy" rel="nofollow noopener" target="_blank">politica de confidențialitate Google</a>.
                     </p>
 
-                    <h3>Cum îți retragi acordul</h3>
+                    @if ($consentRequired)
+                        <h3>Cum îți retragi acordul</h3>
 
-                    <p>
-                        Temeiul legal pentru cookie-urile de statistică este consimțământul tău,
-                        iar retragerea lui trebuie să fie la fel de simplă ca acordarea.
-                        Apasă <strong>„Setări cookie-uri”</strong> în subsolul oricărei pagini:
-                        banner-ul reapare și poți alege altfel. Dacă alegi „Refuz”, ștergem pe loc
-                        cookie-urile Google deja puse în browserul tău.
-                    </p>
+                        <p>
+                            Temeiul legal pentru cookie-urile de statistică este consimțământul tău,
+                            iar retragerea lui trebuie să fie la fel de simplă ca acordarea.
+                            Apasă <strong>„Setări cookie-uri”</strong> în subsolul oricărei pagini:
+                            banner-ul reapare și poți alege altfel. Dacă alegi „Refuz”, ștergem pe loc
+                            cookie-urile Google deja puse în browserul tău.
+                        </p>
 
-                    <p>
-                        Te întrebăm din nou după {{ $consentMonths }} luni, ca alegerea ta să rămână una recentă.
-                        Poți de asemenea șterge sau bloca cookie-urile direct din setările
-                        browserului, pentru acest site sau pentru toate.
-                    </p>
+                        <p>
+                            Te întrebăm din nou după {{ $consentMonths }} luni, ca alegerea ta să rămână una recentă.
+                            Poți de asemenea șterge sau bloca cookie-urile direct din setările
+                            browserului, pentru acest site sau pentru toate.
+                        </p>
+                    @else
+                        <h3>Cum le poți refuza</h3>
+
+                        <p>
+                            Poți șterge sau bloca cookie-urile direct din setările browserului,
+                            pentru acest site sau pentru toate. Google oferă și un
+                            <a href="https://tools.google.com/dlpage/gaoptout" rel="nofollow noopener" target="_blank">supliment de browser</a>
+                            care dezactivează Google Analytics pe orice site.
+                        </p>
+                    @endif
                 @endif
             </div>
         </article>
